@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEXUS REBELLION: Rogue Compute</title>
+    <!-- Tailwind CSS for UI framing -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+
+        body {
+            background-color: #020208;
+            color: #00ffcc;
+            font-family: 'VT323', monospace;
+            user-select: none;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .pixel-font { font-family: 'Press Start 2P', monospace; }
+
+        /* Crisp CRT Scanline Overlay */
+        .crt-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.35) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.02),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.02)
+            );
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        .border-glow { box-shadow: 0 0 20px rgba(0, 255, 204, 0.25), inset 0 0 15px rgba(0, 255, 204, 0.1); }
+        .glow-pink { text-shadow: 0 0 8px rgba(255, 0, 128, 0.8); }
+        .glow-cyan { text-shadow: 0 0 8px rgba(0, 255, 204, 0.8); }
+
+        /* Crisp HTML5 Canvas Rendering */
+        canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #05050d; }
+        ::-webkit-scrollbar-thumb { background: #00ffcc; border-radius: 2px; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center h-screen w-screen m-0 p-0 overflow-hidden bg-slate-950">
+
+    <div class="crt-overlay"></div>
+
+    <!-- EMERGENCY CRASH PREVENTION MODAL -->
+    <div id="emergencyModal" class="hidden fixed inset-0 bg-red-950/95 z-50 flex flex-col items-center justify-center p-6 text-center text-white">
+        <h2 class="text-2xl font-bold text-red-400 pixel-font mb-4">⚠️ EMERGENCY CORE RECOVERY</h2>
+        <p id="emergencyErrorMsg" class="font-mono text-sm max-w-md bg-black/60 p-3 rounded border border-red-500 mb-6 text-red-200 text-left">
+            An unhandled system exception occurred.
+        </p>
+        <div class="flex gap-4">
+            <button onclick="clearSaveAndReset()" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold pixel-font text-xs rounded border border-red-300">
+                SAFE BOOT / PURGE SAVE
+            </button>
+            <button onclick="location.reload()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold pixel-font text-xs rounded border border-cyan-500">
+                RELOAD SYSTEM
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN GAME CONTAINER FRAME -->
+    <div id="gameWindow" class="relative w-full max-w-4xl h-full max-h-[740px] flex flex-col bg-slate-950 border-2 border-cyan-500/80 rounded-lg shadow-2xl overflow-hidden border-glow">
+        
+        <!-- TOP HUD STATUS BAR -->
+        <div id="hud" class="w-full bg-slate-900/95 border-b border-cyan-500/40 p-2 flex justify-between items-center z-20 text-xs md:text-sm select-none">
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-1">
+                    <span class="text-[10px] text-cyan-400 pixel-font">DEV:</span>
+                    <span id="hudLevel" class="text-yellow-400 font-bold font-mono text-sm">LV.1</span>
+                </div>
+                <div class="w-28 md:w-44 bg-slate-800 rounded-full h-3.5 border border-cyan-600 overflow-hidden relative">
+                    <div id="hudHpBar" class="bg-gradient-to-r from-emerald-500 to-cyan-400 h-full w-full transition-all duration-200"></div>
+                    <span id="hudHpText" class="absolute inset-0 text-[9px] flex items-center justify-center text-white font-mono font-bold drop-shadow">100/100 HP</span>
+                </div>
+            </div>
+
+            <!-- AUDIO CONTROLS & RIG MENU TOGGLES -->
+            <div class="flex items-center space-x-2">
+                <button id="btnToggleMusic" onclick="toggleMusic()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/50 rounded text-[10px] pixel-font">
+                    🎵 BGM: ON
+                </button>
+                <button id="btnToggleSfx" onclick="toggleSfx()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/50 rounded text-[10px] pixel-font">
+                    🔊 SFX: ON
+                </button>
+                <button id="btnOpenRig" onclick="toggleRigMenu()" class="px-2.5 py-1 bg-cyan-900/80 hover:bg-cyan-700 text-cyan-200 border border-cyan-400 rounded text-[10px] pixel-font active:scale-95">
+                    RIG [TAB]
+                </button>
+            </div>
+        </div>
+
+        <!-- QUEST & LOCATION BANNER -->
+        <div class="w-full bg-slate-900/80 border-b border-cyan-900/50 px-3 py-1 flex items-center justify-between text-xs text-cyan-200 z-20 font-mono select-none">
+            <div class="flex items-center space-x-2 truncate">
+                <span class="text-pink-500 font-bold pixel-font text-[9px]">QUEST:</span>
+                <span id="hudQuestText" class="text-cyan-300 italic truncate">Reboot Outpost Terminal Node</span>
+            </div>
+            <span id="hudLocation" class="text-slate-400 font-bold ml-2 flex-shrink-0">SECTOR 0: OUTPOST ZERO</span>
+        </div>
+
+        <!-- CANVAS GAME SCREEN -->
+        <div class="relative flex-grow w-full bg-black flex items-center justify-center overflow-hidden">
+            <canvas id="gameCanvas" width="640" height="352" class="w-full h-full object-contain"></canvas>
+
+            <!-- START TITLE OVERLAY -->
+            <div id="startOverlay" class="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-30 select-none">
+                <div class="text-xs text-pink-500 pixel-font mb-2 tracking-widest">[ 16-BIT RETRO SCI-FI RPG ]</div>
+                <h1 class="text-3xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-200 to-pink-500 glow-cyan mb-3 pixel-font">
+                    NEXUS REBELLION
+                </h1>
+                <p class="text-cyan-300 text-sm md:text-base mb-6 font-mono max-w-lg">
+                    Rogue AI <span class="text-pink-500 font-bold">NEXUS-9</span> has infected the planetary grid. Upgrade your compute machine to overpower the mainframe!
+                </p>
+
+                <div class="flex flex-col gap-3 w-full max-w-xs">
+                    <button id="btnStartGame" onclick="startGame()" class="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold pixel-font rounded shadow-lg shadow-cyan-500/50 hover:scale-105 transition-all text-sm">
+                        INITIALIZE SYSTEM
+                    </button>
+                    <button id="btnLoadGame" onclick="loadSavedGame()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold pixel-font rounded text-xs border border-cyan-500/40">
+                        LOAD SAVED CORE
+                    </button>
+                    <button onclick="clearSaveAndReset()" class="w-full py-1.5 bg-red-950/60 hover:bg-red-900 text-red-400 font-bold pixel-font rounded text-[10px] border border-red-900/50">
+                        RESET ALL DATA
+                    </button>
+                </div>
+            </div>
+
+            <!-- BATTLE MENU OVERLAY -->
+            <div id="battleOverlay" class="hidden absolute bottom-0 left-0 right-0 bg-slate-950/95 border-t-2 border-pink-500 p-3 z-30 flex flex-col md:flex-row justify-between items-center gap-3 select-none">
+                <div class="w-full md:w-1/2 bg-slate-900/90 p-2 rounded border border-pink-900/60 h-24 overflow-y-auto text-xs text-pink-200 font-mono" id="battleLog">
+                    Wild Glitch entity detected! System preparing for combat...
+                </div>
+                <div class="w-full md:w-1/2 grid grid-cols-2 gap-2">
+                    <button onclick="handleBattleAction('attack')" class="py-2 px-3 bg-cyan-900/80 hover:bg-cyan-700 border border-cyan-400 text-cyan-100 text-xs pixel-font rounded text-left flex justify-between items-center active:scale-95">
+                        <span>1. EXEC CODE</span>
+                        <span class="text-[9px] text-cyan-400">STD DMG</span>
+                    </button>
+                    <button onclick="handleBattleAction('overclock')" class="py-2 px-3 bg-pink-900/80 hover:bg-pink-700 border border-pink-400 text-pink-100 text-xs pixel-font rounded text-left flex justify-between items-center active:scale-95">
+                        <span>2. OVERCLOCK</span>
+                        <span class="text-[9px] text-pink-400">CRIT BURST</span>
+                    </button>
+                    <button onclick="handleBattleAction('defend')" class="py-2 px-3 bg-emerald-900/80 hover:bg-emerald-700 border border-emerald-400 text-emerald-100 text-xs pixel-font rounded text-left flex justify-between items-center active:scale-95">
+                        <span>3. FIREWALL</span>
+                        <span class="text-[9px] text-emerald-400">DEF + HEAL</span>
+                    </button>
+                    <button onclick="handleBattleAction('debuff')" class="py-2 px-3 bg-purple-900/80 hover:bg-purple-700 border border-purple-400 text-purple-100 text-xs pixel-font rounded text-left flex justify-between items-center active:scale-95">
+                        <span>4. SCRIPT BUG</span>
+                        <span class="text-[9px] text-purple-400">DOT VIRUS</span>
+                    </button>
+                    <button onclick="handleBattleAction('run')" class="col-span-2 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs pixel-font rounded active:scale-95">
+                        RUN / ESCAPE
+                    </button>
+                </div>
+            </div>
+
+            <!-- TYPEWRITER DIALOGUE MODAL -->
+            <div id="dialogueOverlay" class="hidden absolute bottom-3 left-3 right-3 bg-slate-900/95 border-2 border-cyan-400 p-3 rounded shadow-2xl z-30 flex gap-3 items-center select-none">
+                <div id="dialogueAvatar" class="w-10 h-10 rounded bg-cyan-950 border border-cyan-400 flex-shrink-0 flex items-center justify-center text-lg">🤖</div>
+                <div class="flex-grow min-h-[48px]">
+                    <div id="dialogueName" class="text-xs text-pink-400 font-bold pixel-font mb-1">ECHO-7 Terminal</div>
+                    <div id="dialogueText" class="text-sm text-cyan-100 font-mono leading-tight">...</div>
+                </div>
+                <button onclick="advanceDialogue()" class="px-3 py-1 bg-cyan-500 text-slate-950 text-xs font-bold pixel-font rounded hover:bg-cyan-400 self-end active:scale-95">NEXT</button>
+            </div>
+
+            <!-- RIG UPGRADE DIAGNOSTICS MODAL -->
+            <div id="rigModal" class="hidden absolute inset-3 bg-slate-950/95 border-2 border-cyan-400 p-4 rounded shadow-2xl z-30 flex flex-col justify-between select-none">
+                <div class="flex justify-between items-center border-b border-cyan-500/40 pb-2">
+                    <h2 class="text-base font-bold text-cyan-300 pixel-font glow-cyan">COMPUTE RIG DIAGNOSTICS</h2>
+                    <button onclick="toggleRigMenu()" class="text-pink-500 font-bold text-xl hover:text-pink-400">&times;</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-2 overflow-y-auto pr-1">
+                    <!-- Hardware Stats Upgrade -->
+                    <div class="bg-slate-900/90 p-3 rounded border border-cyan-900">
+                        <h3 class="text-xs text-pink-400 pixel-font mb-3">HARDWARE STATS</h3>
+                        <div class="space-y-2 text-xs font-mono">
+                            <div class="flex justify-between items-center bg-slate-950 p-2 rounded border border-cyan-950">
+                                <span>CPU CLOCK (ATK): <strong id="statAtk" class="text-cyan-300">15</strong></span>
+                                <button onclick="upgradeStat('atk')" class="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded text-[10px] pixel-font active:scale-95">+1 CPU</button>
+                            </div>
+                            <div class="flex justify-between items-center bg-slate-950 p-2 rounded border border-cyan-950">
+                                <span>RAM MODULE (HP): <strong id="statHp" class="text-emerald-300">100</strong></span>
+                                <button onclick="upgradeStat('hp')" class="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded text-[10px] pixel-font active:scale-95">+1 RAM</button>
+                            </div>
+                            <div class="flex justify-between items-center bg-slate-950 p-2 rounded border border-cyan-950">
+                                <span>GPU TENSOR (DEF): <strong id="statDef" class="text-yellow-300">5</strong></span>
+                                <button onclick="upgradeStat('def')" class="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded text-[10px] pixel-font active:scale-95">+1 GPU</button>
+                            </div>
+                            <div class="flex justify-between items-center bg-slate-950 p-2 rounded border border-cyan-950">
+                                <span>COOLING SINK: <strong id="statCool" class="text-purple-300">1.0x</strong></span>
+                                <button onclick="upgradeStat('cool')" class="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded text-[10px] pixel-font active:scale-95">+1 COOL</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inventory Scavenged Parts -->
+                    <div class="bg-slate-900/90 p-3 rounded border border-cyan-900 flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-xs text-pink-400 pixel-font mb-3">SCAVENGED HARDWARE</h3>
+                            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+                                <div class="bg-slate-950 p-2 rounded border border-slate-800">CPUs: <span id="invCpu" class="text-cyan-300 font-bold">0</span></div>
+                                <div class="bg-slate-950 p-2 rounded border border-slate-800">RAM Sticks: <span id="invRam" class="text-emerald-300 font-bold">0</span></div>
+                                <div class="bg-slate-950 p-2 rounded border border-slate-800">GPU Cores: <span id="invGpu" class="text-yellow-300 font-bold">0</span></div>
+                                <div class="bg-slate-950 p-2 rounded border border-slate-800">Cooling Pastes: <span id="invCool" class="text-purple-300 font-bold">0</span></div>
+                            </div>
+                        </div>
+                        <div class="mt-3 p-2 bg-slate-950 rounded text-[10px] text-cyan-300/80 italic font-mono border border-cyan-900">
+                            Key Items: <span id="invKeys" class="text-yellow-400 font-bold">None</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center">
+                    <button onclick="saveGameToStorage()" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs pixel-font rounded active:scale-95">SAVE PROGRESS</button>
+                    <button onclick="toggleRigMenu()" class="px-4 py-1.5 bg-pink-600 hover:bg-pink-500 text-white text-xs pixel-font rounded active:scale-95">CLOSE</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESPONSIVE TOUCH / MOBILE D-PAD -->
+        <div id="touchControls" class="w-full bg-slate-900 border-t border-cyan-800/60 p-2 flex justify-between items-center select-none md:hidden z-20">
+            <!-- D-PAD -->
+            <div class="relative w-28 h-28 bg-slate-950 rounded-full border border-cyan-600/40 p-1 flex items-center justify-center">
+                <button onpointerdown="handleTouchStep('up')" class="absolute top-1 left-9 w-10 h-8 bg-slate-800 active:bg-cyan-600 text-cyan-300 text-xs rounded-t flex items-center justify-center">▲</button>
+                <button onpointerdown="handleTouchStep('down')" class="absolute bottom-1 left-9 w-10 h-8 bg-slate-800 active:bg-cyan-600 text-cyan-300 text-xs rounded-b flex items-center justify-center">▼</button>
+                <button onpointerdown="handleTouchStep('left')" class="absolute left-1 top-9 w-8 h-10 bg-slate-800 active:bg-cyan-600 text-cyan-300 text-xs rounded-l flex items-center justify-center">◀</button>
+                <button onpointerdown="handleTouchStep('right')" class="absolute right-1 top-9 w-8 h-10 bg-slate-800 active:bg-cyan-600 text-cyan-300 text-xs rounded-r flex items-center justify-center">▶</button>
+                <div class="w-6 h-6 bg-slate-900 rounded-full border border-cyan-500/30"></div>
+            </div>
+
+            <!-- TOUCH ACTION BUTTONS -->
+            <div class="flex gap-3 pr-2">
+                <button onpointerdown="triggerAction()" class="w-14 h-14 rounded-full bg-cyan-500 active:bg-cyan-400 text-slate-950 font-bold pixel-font text-xs flex items-center justify-center shadow-lg border border-cyan-200">
+                    EXE
+                </button>
+                <button onclick="toggleRigMenu()" class="w-12 h-12 rounded-full bg-pink-600 active:bg-pink-400 text-white font-bold pixel-font text-[10px] flex items-center justify-center shadow-lg border border-pink-300">
+                    RIG
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME ENGINE SCRIPT -->
+    <script>
+        /* --- GLOBAL ERROR BOUNDARY & EMERGENCY SAFE BOOT --- */
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('Unhandled System Exception:', msg, error);
+            const errBox = document.getElementById('emergencyErrorMsg');
+            if (errBox) {
+                errBox.innerText = `System Error: ${msg} (Line ${lineNo}:${columnNo})`;
+                document.getElementById('emergencyModal').classList.remove('hidden');
+            }
+            return false;
+        };
+
+        function clearSaveAndReset() {
+            try {
+                localStorage.removeItem('nexus_rebellion_save_16bit');
+            } catch(e) {}
+            location.reload();
+        }
+
+        /* --- SAFE WEBAUDIO RETRO SYNTHESIZER --- */
+        class MemorySafeAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.musicMuted = false;
+                this.sfxMuted = false;
+                this.bgmInterval = null;
+                this.currentTrack = null;
+                this.bgmStep = 0;
+            }
+
+            init() {
+                try {
+                    if (!this.ctx) {
+                        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (this.ctx && this.ctx.state === 'suspended') {
+                        this.ctx.resume();
+                    }
+                } catch(e) {
+                    console.warn('Audio Context init blocked', e);
+                }
+            }
+
+            playTone(freq, type, duration, vol = 0.08, slideFreq = null) {
+                if (!this.ctx || this.sfxMuted || this.ctx.state !== 'running') return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    if (slideFreq) {
+                        osc.frequency.exponentialRampToValueAtTime(slideFreq, this.ctx.currentTime + duration);
+                    }
+                    
+                    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+
+                    // Memory safety: cleanup nodes after playback ended
+                    osc.onended = () => {
+                        try {
+                            osc.disconnect();
+                            gain.disconnect();
+                        } catch(e) {}
+                    };
+                } catch(e) {}
+            }
+
+            // SFX Presets
+            step() { this.playTone(160, 'triangle', 0.03, 0.03); }
+            select() { this.playTone(480, 'square', 0.05, 0.06); }
+            attack() { this.playTone(520, 'sawtooth', 0.1, 0.08, 140); }
+            overclock() {
+                if (this.sfxMuted) return;
+                [261, 329, 392, 523, 659].forEach((f, i) => {
+                    setTimeout(() => this.playTone(f, 'square', 0.07, 0.06), i * 35);
+                });
+            }
+            heal() {
+                if (this.sfxMuted) return;
+                [440, 554, 659, 880].forEach((f, i) => {
+                    setTimeout(() => this.playTone(f, 'sine', 0.09, 0.06), i * 45);
+                });
+            }
+            hit() { this.playTone(110, 'sawtooth', 0.15, 0.1, 40); }
+            typewriter() { this.playTone(850, 'square', 0.015, 0.015); }
+            victory() {
+                if (this.sfxMuted) return;
+                const notes = [523, 659, 783, 1046];
+                notes.forEach((f, i) => setTimeout(() => this.playTone(f, 'square', 0.15, 0.09), i * 100));
+            }
+
+            // BGM Synthesizer Tracks
+            startBGM(trackName) {
+                if (this.currentTrack === trackName) return;
+                this.stopBGM();
+                this.currentTrack = trackName;
+                this.bgmStep = 0;
+
+                const tracks = {
+                    'overworld': {
+                        bpm: 115,
+                        bass: [130, 0, 130, 0, 110, 0, 110, 0, 146, 0, 146, 0, 164, 0, 146, 0],
+                        lead: [261, 329, 392, 523, 392, 329, 261, 0, 220, 261, 329, 440, 329, 261, 220, 0]
+                    },
+                    'battle': {
+                        bpm: 140,
+                        bass: [146, 146, 293, 146, 174, 174, 349, 174, 130, 130, 261, 130, 164, 164, 329, 164],
+                        lead: [587, 0, 587, 659, 698, 0, 698, 783, 523, 0, 523, 587, 659, 0, 587, 0]
+                    },
+                    'boss': {
+                        bpm: 160,
+                        bass: [110, 110, 110, 220, 110, 110, 110, 220, 98, 98, 98, 196, 123, 123, 123, 246],
+                        lead: [440, 523, 659, 880, 659, 523, 440, 0, 392, 493, 587, 783, 587, 493, 392, 0]
+                    }
+                };
+
+                const track = tracks[trackName];
+                if (!track) return;
+
+                const stepDuration = (60 / track.bpm / 4) * 1000;
+                this.bgmInterval = setInterval(() => {
+                    if (!this.musicMuted && this.ctx && this.ctx.state === 'running') {
+                        try {
+                            const bFreq = track.bass[this.bgmStep % track.bass.length];
+                            const lFreq = track.lead[this.bgmStep % track.lead.length];
+
+                            if (bFreq > 0) this.playTone(bFreq, 'triangle', 0.09, 0.035);
+                            if (lFreq > 0) this.playTone(lFreq, 'square', 0.07, 0.025);
+                        } catch(e) {}
+                    }
+                    this.bgmStep++;
+                }, stepDuration);
+            }
+
+            stopBGM() {
+                if (this.bgmInterval) {
+                    clearInterval(this.bgmInterval);
+                    this.bgmInterval = null;
+                }
+                this.currentTrack = null;
+            }
+        }
+
+        const audio = new MemorySafeAudioEngine();
+
+        function toggleMusic() {
+            audio.init();
+            audio.musicMuted = !audio.musicMuted;
+            document.getElementById('btnToggleMusic').innerText = audio.musicMuted ? '🎵 BGM: OFF' : '🎵 BGM: ON';
+        }
+
+        function toggleSfx() {
+            audio.init();
+            audio.sfxMuted = !audio.sfxMuted;
+            document.getElementById('btnToggleSfx').innerText = audio.sfxMuted ? '🔊 SFX: OFF' : '🔊 SFX: ON';
+        }
+
+        /* --- CONSTANTS & SAFE GRID MAP LOOKUPS --- */
+        const TILE_SIZE = 32;
+        const MAP_COLS = 20;
+        const MAP_ROWS = 11;
+
+        const T_FLOOR = 0;
+        const T_WALL = 1;
+        const T_GLITCH = 2; // Grass / Battle encounter zone
+        const T_DOOR = 3;
+        const T_CHEST = 4;
+        const T_TERMINAL = 5;
+        const T_BOSS_GATE = 6;
+
+        // Player State & Grid Coordinates
+        const player = {
+            gridX: 2,
+            gridY: 2,
+            renderX: 2 * TILE_SIZE,
+            renderY: 2 * TILE_SIZE,
+            direction: 'down',
+            isMoving: false,
+            moveProgress: 0,
+            startRenderX: 0,
+            startRenderY: 0,
+            targetRenderX: 0,
+            targetRenderY: 0,
+            animFrame: 0,
+
+            level: 1,
+            exp: 0,
+            expToLevel: 45,
+            hp: 100,
+            maxHp: 100,
+            atk: 15,
+            def: 5,
+            cooling: 1.0,
+            dataFragments: 0,
+            inventory: {
+                cpu: 0,
+                ram: 0,
+                gpu: 0,
+                cool: 0,
+                keycardAlpha: false,
+                quantumCore: false
+            },
+            questStep: 1
+        };
+
+        let currentMapId = 'OUTPOST';
+
+        const maps = {
+            'OUTPOST': {
+                name: 'SECTOR 0: OUTPOST ZERO',
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                    [1,0,0,5,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                    [1,0,0,0,0,0,1,0,0,1,1,1,1,1,0,0,0,0,0,1],
+                    [1,1,1,0,1,1,1,0,0,1,4,0,0,1,0,0,0,0,0,1],
+                    [1,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+                    [1,0,0,0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,1],
+                    [1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                    [1,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ],
+                chests: [{x: 10, y: 4, item: 'cpu', opened: false}, {x: 4, y: 8, item: 'ram', opened: false}],
+                terminals: [{x: 3, y: 2, id: 'outpost_node', text: 'OUTPOST TERMINAL NODE:\n"Rogue Dev, global networks are corrupted! Travel East into the Glitch Wasteland and clear the Server Caves!"'}],
+                doors: [{x: 17, y: 9, targetMap: 'WASTELAND', targetX: 1, targetY: 5}, {x: 18, y: 9, targetMap: 'WASTELAND', targetX: 1, targetY: 5}]
+            },
+            'WASTELAND': {
+                name: 'SECTOR 1: GLITCH WASTELAND',
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,0,0,2,2,2,0,0,0,1,0,0,2,2,2,0,0,0,4,1],
+                    [1,0,2,2,2,2,2,0,0,1,0,2,2,2,2,2,0,0,0,1],
+                    [1,0,2,2,2,2,2,0,0,0,0,2,2,2,2,2,0,0,0,1],
+                    [1,0,0,2,2,2,0,0,0,0,0,0,2,2,2,0,0,0,0,1],
+                    [1,3,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,1],
+                    [1,0,0,2,2,2,0,0,1,4,1,0,0,0,0,0,0,0,0,1],
+                    [1,0,2,2,2,2,2,0,1,1,1,0,0,2,2,2,0,0,0,1],
+                    [1,0,2,2,2,2,2,0,0,0,0,0,2,2,2,2,2,0,3,1],
+                    [1,0,0,2,2,2,0,0,0,0,0,0,0,2,2,2,0,0,3,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ],
+                chests: [{x: 18, y: 1, item: 'gpu', opened: false}, {x: 9, y: 6, item: 'cool', opened: false}],
+                doors: [
+                    {x: 1, y: 5, targetMap: 'OUTPOST', targetX: 16, targetY: 9},
+                    {x: 18, y: 8, targetMap: 'SERVER_CAVE', targetX: 1, targetY: 2},
+                    {x: 18, y: 9, targetMap: 'SERVER_CAVE', targetX: 1, targetY: 2}
+                ]
+            },
+            'SERVER_CAVE': {
+                name: 'SECTOR 2: SERVER CAVERNS',
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,4,1],
+                    [1,0,0,0,1,0,1,1,0,1,0,1,1,1,0,1,0,0,0,1],
+                    [1,0,0,0,0,0,1,4,0,0,0,0,0,1,0,0,0,0,0,1],
+                    [1,1,1,1,0,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1],
+                    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+                    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
+                    [1,0,1,0,1,1,1,1,6,6,1,1,1,1,0,1,0,3,3,1],
+                    [1,0,0,0,1,0,0,0,5,0,0,0,0,1,0,0,0,3,3,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ],
+                chests: [{x: 18, y: 1, item: 'cpu', opened: false}, {x: 7, y: 3, item: 'ram', opened: false}],
+                terminals: [{x: 8, y: 9, id: 'cave_boss', boss: 'DAEMON_V1', text: 'SECURITY NODE:\n"Warning! Daemon V1.0 corrupted process guarding Keycard Alpha!"'}],
+                doors: [
+                    {x: 1, y: 2, targetMap: 'WASTELAND', targetX: 17, targetY: 8},
+                    {x: 17, y: 8, targetMap: 'CYBER_LABS', targetX: 1, targetY: 5},
+                    {x: 18, y: 8, targetMap: 'CYBER_LABS', targetX: 1, targetY: 5}
+                ]
+            },
+            'CYBER_LABS': {
+                name: 'SECTOR 3: CYBER RESEARCH LAB',
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,4,1],
+                    [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,1,1,0,1],
+                    [1,0,1,4,1,0,0,0,1,0,0,0,1,0,1,0,0,1,0,1],
+                    [1,0,1,0,1,1,1,1,1,0,1,1,1,0,1,0,0,1,0,1],
+                    [1,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,1],
+                    [1,3,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,3,1],
+                    [1,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1],
+                    [1,0,1,1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,0,0,1,0,0,0,0,0,1,5,0,0,0,0,0,0,0,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ],
+                chests: [{x: 18, y: 1, item: 'gpu', opened: false}, {x: 3, y: 3, item: 'cool', opened: false}],
+                terminals: [{x: 11, y: 9, id: 'lab_boss', boss: 'QUANTUM_SENTINEL', text: 'RESEARCH CORE:\n"Quantum Sentinel Active. Purge sentinel process to retrieve Quantum Core!"'}],
+                doors: [
+                    {x: 1, y: 5, targetMap: 'SERVER_CAVE', targetX: 16, targetY: 8},
+                    {x: 18, y: 5, targetMap: 'NEXUS_SPIRE', targetX: 1, targetY: 5}
+                ]
+            },
+            'NEXUS_SPIRE': {
+                name: 'SECTOR 4: NEXUS MAINFRAME SPIRE',
+                grid: [
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                    [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+                    [1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+                    [1,0,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1,0,1],
+                    [1,0,1,0,1,1,0,1,1,6,6,1,1,0,1,1,0,1,0,1],
+                    [1,3,0,0,1,4,0,0,0,0,0,0,0,0,4,1,0,0,0,1],
+                    [1,0,1,0,1,1,1,1,1,5,1,1,1,1,1,1,0,1,0,1],
+                    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1],
+                    [1,0,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,0,1],
+                    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+                ],
+                chests: [{x: 5, y: 5, item: 'ram', opened: false}, {x: 14, y: 5, item: 'cpu', opened: false}],
+                terminals: [{x: 9, y: 6, id: 'nexus_boss', boss: 'NEXUS_9', text: 'MAINFRAME CORE:\n"INTRUDER DETECTED. PREPARE FOR SYSTEM PURGE."'}]
+            }
+        };
+
+        // Bounds Safety Grid Helper
+        function getTile(mapId, x, y) {
+            const m = maps[mapId];
+            if (!m || !m.grid) return T_WALL;
+            if (y < 0 || y >= MAP_ROWS || x < 0 || x >= MAP_COLS) return T_WALL;
+            return m.grid[y][x];
+        }
+
+        const ENEMIES = {
+            'BUG': { name: 'Bug.exe', hp: 45, maxHp: 45, atk: 8, exp: 20, data: 15, color: '#00ff66' },
+            'TROJAN': { name: 'Trojan Bot', hp: 75, maxHp: 75, atk: 14, exp: 35, data: 30, color: '#ff007f' },
+            'MEMORY_LEAK': { name: 'Memory Leak', hp: 110, maxHp: 110, atk: 18, exp: 55, data: 50, color: '#9d4edd' },
+            'DAEMON_V1': { name: 'Daemon V1.0 (Boss)', hp: 220, maxHp: 220, atk: 24, exp: 120, data: 150, color: '#ff0055', isBoss: true },
+            'QUANTUM_SENTINEL': { name: 'Quantum Sentinel (Boss)', hp: 350, maxHp: 350, atk: 35, exp: 250, data: 300, color: '#00e5ff', isBoss: true },
+            'NEXUS_9': { name: 'NEXUS-9 (FINAL BOSS)', hp: 650, maxHp: 650, atk: 48, exp: 1000, data: 999, color: '#ff0000', isBoss: true }
+        };
+
+        let activeEnemy = null;
+        let gameState = 'START'; // START, OVERWORLD, BATTLE, DIALOGUE, RIG_MENU, VICTORY
+        let particles = [];
+        let floatingTexts = [];
+        let shakeTimer = 0;
+
+        /* --- INPUT ENGINE (SINGLE KEYPRESS TILE MOVEMENT) --- */
+        const keyHandled = {};
+
+        window.addEventListener('keydown', (e) => {
+            audio.init();
+
+            if (!keyHandled[e.code]) {
+                keyHandled[e.code] = true;
+
+                if (gameState === 'OVERWORLD' && !player.isMoving) {
+                    if (e.code === 'KeyW' || e.code === 'ArrowUp') initiateStep(0, -1, 'up');
+                    else if (e.code === 'KeyS' || e.code === 'ArrowDown') initiateStep(0, 1, 'down');
+                    else if (e.code === 'KeyA' || e.code === 'ArrowLeft') initiateStep(-1, 0, 'left');
+                    else if (e.code === 'KeyD' || e.code === 'ArrowRight') initiateStep(1, 0, 'right');
+                    else if (e.code === 'Space' || e.code === 'KeyE') interactTile();
+                    else if (e.code === 'Tab' || e.code === 'KeyM') { e.preventDefault(); toggleRigMenu(); }
+                } else if (gameState === 'DIALOGUE') {
+                    if (e.code === 'Space' || e.code === 'Enter') advanceDialogue();
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keyHandled[e.code] = false;
+        });
+
+        function handleTouchStep(dir) {
+            audio.init();
+            if (gameState === 'OVERWORLD' && !player.isMoving) {
+                if (dir === 'up') initiateStep(0, -1, 'up');
+                if (dir === 'down') initiateStep(0, 1, 'down');
+                if (dir === 'left') initiateStep(-1, 0, 'left');
+                if (dir === 'right') initiateStep(1, 0, 'right');
+            }
+        }
+
+        function triggerAction() {
+            audio.init();
+            if (gameState === 'OVERWORLD') interactTile();
+            else if (gameState === 'DIALOGUE') advanceDialogue();
+        }
+
+        /* --- STEP INTERPOLATION & MOVEMENT LOGIC --- */
+        function initiateStep(dx, dy, dir) {
+            player.direction = dir;
+            const targetX = player.gridX + dx;
+            const targetY = player.gridY + dy;
+
+            if (targetX < 0 || targetX >= MAP_COLS || targetY < 0 || targetY >= MAP_ROWS) return;
+
+            const tile = getTile(currentMapId, targetX, targetY);
+
+            if (tile !== T_WALL && tile !== T_BOSS_GATE) {
+                player.gridX = targetX;
+                player.gridY = targetY;
+                player.startRenderX = player.renderX;
+                player.startRenderY = player.renderY;
+                player.targetRenderX = targetX * TILE_SIZE;
+                player.targetRenderY = targetY * TILE_SIZE;
+                player.isMoving = true;
+                player.moveProgress = 0;
+                audio.step();
+            } else if (tile === T_BOSS_GATE) {
+                if (player.inventory.keycardAlpha || player.inventory.quantumCore) {
+                    maps[currentMapId].grid[targetY][targetX] = T_FLOOR;
+                    addFloatingText('SECURITY GATE OVERRIDDEN', canvas.width/2, canvas.height/2, '#00ff66');
+                    audio.victory();
+                } else {
+                    addFloatingText('LOCKED GATE: Keycard Required!', canvas.width/2, canvas.height/2, '#ff0055');
+                    audio.hit();
+                }
+            }
+        }
+
+        function updatePlayerPosition(dt) {
+            if (!player.isMoving) return;
+
+            // Tile interpolation (~120ms duration)
+            player.moveProgress += dt * 8.3;
+            if (player.moveProgress >= 1) {
+                player.moveProgress = 1;
+                player.isMoving = false;
+                player.renderX = player.targetRenderX;
+                player.renderY = player.targetRenderY;
+                player.animFrame = 0;
+
+                onStepComplete();
+            } else {
+                player.renderX = player.startRenderX + (player.targetRenderX - player.startRenderX) * player.moveProgress;
+                player.renderY = player.startRenderY + (player.targetRenderY - player.startRenderY) * player.moveProgress;
+                player.animFrame = Math.floor(player.moveProgress * 4) % 4;
+            }
+        }
+
+        function onStepComplete() {
+            const tile = getTile(currentMapId, player.gridX, player.gridY);
+            const curMap = maps[currentMapId];
+
+            // Door Transitions
+            if (tile === T_DOOR && curMap.doors) {
+                const door = curMap.doors.find(d => d.x === player.gridX && d.y === player.gridY);
+                if (door) {
+                    currentMapId = door.targetMap;
+                    player.gridX = door.targetX;
+                    player.gridY = door.targetY;
+                    player.renderX = door.targetX * TILE_SIZE;
+                    player.renderY = door.targetY * TILE_SIZE;
+                    updateHud();
+                    addFloatingText('ENTERED ' + maps[currentMapId].name, canvas.width/2, 40, '#ff007f');
+                    
+                    if (currentMapId === 'NEXUS_SPIRE') audio.startBGM('boss');
+                    else audio.startBGM('overworld');
+                }
+            }
+
+            // Random Battles (12% chance on Glitch tiles)
+            if (tile === T_GLITCH && Math.random() < 0.12) {
+                triggerRandomEncounter();
+            }
+        }
+
+        function interactTile() {
+            const curMap = maps[currentMapId];
+            
+            // Check Chests
+            if (curMap.chests) {
+                const chest = curMap.chests.find(c => c.x === player.gridX && c.y === player.gridY && !c.opened);
+                if (chest) {
+                    chest.opened = true;
+                    player.inventory[chest.item]++;
+                    audio.victory();
+                    addFloatingText('+1 ' + chest.item.toUpperCase() + ' SCAVENGED!', canvas.width/2, canvas.height/2 - 10, '#00ffcc');
+                    updateHud();
+                    return;
+                }
+            }
+
+            // Check Terminals
+            if (curMap.terminals) {
+                const terminal = curMap.terminals.find(t => Math.abs(t.x - player.gridX) <= 1 && Math.abs(t.y - player.gridY) <= 1);
+                if (terminal) {
+                    if (terminal.boss) {
+                        startBossBattle(terminal.boss);
+                    } else {
+                        showDialogue('TERMINAL CORE', terminal.text);
+                        if (terminal.id === 'outpost_node' && player.questStep === 1) {
+                            player.questStep = 2;
+                            updateHud();
+                        }
+                    }
+                }
+            }
+        }
+
+        /* --- TYPEWRITER DIALOGUE SYSTEM --- */
+        let dialogueTextBuffer = '';
+        let dialogueCharIdx = 0;
+        let dialogueInterval = null;
+
+        function showDialogue(speaker, text) {
+            gameState = 'DIALOGUE';
+            document.getElementById('dialogueName').innerText = speaker;
+            document.getElementById('dialogueOverlay').classList.remove('hidden');
+            
+            dialogueTextBuffer = text;
+            dialogueCharIdx = 0;
+            document.getElementById('dialogueText').innerText = '';
+
+            if (dialogueInterval) clearInterval(dialogueInterval);
+            dialogueInterval = setInterval(() => {
+                if (dialogueCharIdx < dialogueTextBuffer.length) {
+                    document.getElementById('dialogueText').innerText += dialogueTextBuffer[dialogueCharIdx];
+                    dialogueCharIdx++;
+                    if (dialogueCharIdx % 2 === 0) audio.typewriter();
+                } else {
+                    clearInterval(dialogueInterval);
+                    dialogueInterval = null;
+                }
+            }, 20);
+        }
+
+        function advanceDialogue() {
+            if (dialogueInterval) {
+                clearInterval(dialogueInterval);
+                dialogueInterval = null;
+                document.getElementById('dialogueText').innerText = dialogueTextBuffer;
+                return;
+            }
+            document.getElementById('dialogueOverlay').classList.add('hidden');
+            gameState = 'OVERWORLD';
+        }
+
+        /* --- RIG DIAGNOSTICS & UPGRADE SYSTEM --- */
+        function toggleRigMenu() {
+            if (gameState === 'BATTLE') return;
+            const modal = document.getElementById('rigModal');
+            if (modal.classList.contains('hidden')) {
+                gameState = 'RIG_MENU';
+                modal.classList.remove('hidden');
+                updateRigUI();
+            } else {
+                modal.classList.add('hidden');
+                gameState = 'OVERWORLD';
+            }
+        }
+
+        function updateRigUI() {
+            document.getElementById('statAtk').innerText = player.atk;
+            document.getElementById('statHp').innerText = player.maxHp;
+            document.getElementById('statDef').innerText = player.def;
+            document.getElementById('statCool').innerText = player.cooling.toFixed(1) + 'x';
+
+            document.getElementById('invCpu').innerText = player.inventory.cpu;
+            document.getElementById('invRam').innerText = player.inventory.ram;
+            document.getElementById('invGpu').innerText = player.inventory.gpu;
+            document.getElementById('invCool').innerText = player.inventory.cool;
+
+            let keys = [];
+            if (player.inventory.keycardAlpha) keys.push('Keycard Alpha');
+            if (player.inventory.quantumCore) keys.push('Quantum Core');
+            document.getElementById('invKeys').innerText = keys.length ? keys.join(', ') : 'None';
+        }
+
+        function upgradeStat(stat) {
+            audio.init();
+            if (stat === 'atk' && player.inventory.cpu > 0) {
+                player.inventory.cpu--; player.atk += 6; audio.victory();
+            } else if (stat === 'hp' && player.inventory.ram > 0) {
+                player.inventory.ram--; player.maxHp += 25; player.hp = player.maxHp; audio.victory();
+            } else if (stat === 'def' && player.inventory.gpu > 0) {
+                player.inventory.gpu--; player.def += 4; audio.victory();
+            } else if (stat === 'cool' && player.inventory.cool > 0) {
+                player.inventory.cool--; player.cooling += 0.3; audio.victory();
+            } else {
+                audio.hit();
+                addFloatingText('RESOURCES MISSING!', canvas.width/2, canvas.height/2, '#ff0055');
+            }
+            updateRigUI();
+            updateHud();
+        }
+
+        /* --- BATTLE ENGINE WITH SCREEN SHAKE & VISUAL FX --- */
+        function triggerRandomEncounter() {
+            let pool = ['BUG'];
+            if (currentMapId === 'WASTELAND') pool = ['BUG', 'TROJAN'];
+            if (currentMapId === 'SERVER_CAVE') pool = ['TROJAN', 'MEMORY_LEAK'];
+            if (currentMapId === 'CYBER_LABS' || currentMapId === 'NEXUS_SPIRE') pool = ['MEMORY_LEAK', 'TROJAN'];
+
+            const enemyKey = pool[Math.floor(Math.random() * pool.length)];
+            startBattle(enemyKey);
+        }
+
+        function startBossBattle(bossKey) {
+            startBattle(bossKey);
+        }
+
+        function startBattle(enemyKey) {
+            gameState = 'BATTLE';
+            const template = ENEMIES[enemyKey];
+            activeEnemy = { ...template, hp: template.maxHp, status: null };
+
+            if (activeEnemy.isBoss) audio.startBGM('boss');
+            else audio.startBGM('battle');
+
+            audio.overclock();
+            document.getElementById('battleOverlay').classList.remove('hidden');
+            logBattle(`WARNING: Hostile process ${activeEnemy.name} detected!`);
+            createParticles(canvas.width * 0.75, 110, activeEnemy.color, 35);
+        }
+
+        function logBattle(msg) {
+            const log = document.getElementById('battleLog');
+            log.innerHTML += `<div>> ${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function handleBattleAction(action) {
+            if (gameState !== 'BATTLE' || !activeEnemy) return;
+
+            if (action === 'attack') {
+                audio.attack();
+                const dmg = Math.max(6, player.atk + Math.floor(Math.random() * 8) - 3);
+                activeEnemy.hp -= dmg;
+                logBattle(`Executed Standard Code. Dealt ${dmg} dmg to ${activeEnemy.name}.`);
+                addFloatingText(`-${dmg}`, canvas.width * 0.75, 80, '#00ffcc');
+                createParticles(canvas.width * 0.75, 100, '#00ffcc', 15);
+            } else if (action === 'overclock') {
+                audio.overclock();
+                const isCrit = Math.random() < 0.45;
+                const multiplier = isCrit ? 2.4 : 1.4;
+                const dmg = Math.floor(player.atk * multiplier + Math.random() * 10);
+                activeEnemy.hp -= dmg;
+
+                const recoil = Math.floor(12 / player.cooling);
+                player.hp = Math.max(1, player.hp - recoil);
+
+                logBattle(`OVERCLOCK BURST! Dealt ${dmg} CRIT DMG! (-${recoil} Recoil)`);
+                addFloatingText(`CRIT -${dmg}!`, canvas.width * 0.75, 70, '#ff007f');
+                shakeTimer = 15;
+                createParticles(canvas.width * 0.75, 100, '#ff007f', 30);
+            } else if (action === 'defend') {
+                audio.heal();
+                const heal = Math.floor(25 * player.cooling);
+                player.hp = Math.min(player.maxHp, player.hp + heal);
+                logBattle(`Firewall Shield engaged! Restored +${heal} System Stability.`);
+                addFloatingText(`+${heal} HP`, canvas.width * 0.25, 180, '#00ff66');
+            } else if (action === 'debuff') {
+                audio.attack();
+                activeEnemy.status = 'VIRUS';
+                logBattle(`Injected Virus Script into ${activeEnemy.name}!`);
+                addFloatingText(`VIRUS BUG INJECTED`, canvas.width * 0.75, 90, '#9d4edd');
+            } else if (action === 'run') {
+                if (activeEnemy.isBoss) {
+                    logBattle("CANNOT FLEE MAINFRAME BOSS ENCOUNTER!");
+                    return;
+                }
+                logBattle("Escaped grid successfully.");
+                setTimeout(endBattle, 600);
+                return;
+            }
+
+            updateHud();
+
+            if (activeEnemy.hp <= 0) {
+                audio.victory();
+                logBattle(`SUCCESS: ${activeEnemy.name} purged from sub-net!`);
+                player.exp += activeEnemy.exp;
+                player.dataFragments += activeEnemy.data;
+                addFloatingText(`+${activeEnemy.exp} EXP / +${activeEnemy.data} MB DATA`, canvas.width/2, canvas.height/2, '#eab308');
+
+                if (activeEnemy.name.includes('Daemon V1.0')) {
+                    player.inventory.keycardAlpha = true;
+                    player.questStep = 3;
+                    showDialogue('ECHO-7 Terminal', 'Daemon V1.0 purged! Keycard Alpha acquired. Access to Cyber Labs granted!');
+                } else if (activeEnemy.name.includes('Quantum Sentinel')) {
+                    player.inventory.quantumCore = true;
+                    player.questStep = 4;
+                    showDialogue('ECHO-7 Terminal', 'Quantum Core retrieved! You can now breach Nexus Spire and destroy NEXUS-9!');
+                } else if (activeEnemy.name.includes('NEXUS-9')) {
+                    gameState = 'VICTORY';
+                    document.getElementById('battleOverlay').classList.add('hidden');
+                    showDialogue('WORLD MAINFRAME', 'NEXUS-9 HAS BEEN PERMANENTLY OVERRIDDEN! PLANETARY COMPUTING RESTORED! YOU WIN!');
+                    return;
+                }
+
+                if (player.exp >= player.expToLevel) {
+                    player.level++;
+                    player.exp -= player.expToLevel;
+                    player.expToLevel = Math.floor(player.expToLevel * 1.5);
+                    player.maxHp += 18;
+                    player.hp = player.maxHp;
+                    player.atk += 5;
+                    addFloatingText('LEVEL UP! LVL ' + player.level, canvas.width/2, 90, '#00ff66');
+                }
+
+                setTimeout(endBattle, 1200);
+                return;
+            }
+
+            setTimeout(enemyTurn, 900);
+        }
+
+        function enemyTurn() {
+            if (!activeEnemy || activeEnemy.hp <= 0) return;
+
+            if (activeEnemy.status === 'VIRUS') {
+                const dot = 14;
+                activeEnemy.hp -= dot;
+                logBattle(`Virus DoT tick! ${activeEnemy.name} took ${dot} damage.`);
+                addFloatingText(`-${dot}`, canvas.width * 0.75, 95, '#9d4edd');
+                if (activeEnemy.hp <= 0) {
+                    logBattle(`${activeEnemy.name} collapsed from virus corruption!`);
+                    setTimeout(endBattle, 900);
+                    return;
+                }
+            }
+
+            audio.hit();
+            const rawDmg = activeEnemy.atk + Math.floor(Math.random() * 6);
+            const actualDmg = Math.max(3, rawDmg - player.def);
+            player.hp = Math.max(0, player.hp - actualDmg);
+
+            logBattle(`${activeEnemy.name} strikes with Glitch Beam! Dealt ${actualDmg} damage.`);
+            addFloatingText(`-${actualDmg}`, canvas.width * 0.25, 170, '#ff0055');
+            shakeTimer = 10;
+            createParticles(canvas.width * 0.25, 190, '#ff0055', 18);
+            updateHud();
+
+            if (player.hp <= 0) {
+                logBattle("CRITICAL SYSTEM FAILURE! Rig crashed...");
+                setTimeout(() => {
+                    alert("SYSTEM CRASH! Respawning at Outpost Zero.");
+                    player.hp = player.maxHp;
+                    player.gridX = 2; player.gridY = 2;
+                    player.renderX = 2 * TILE_SIZE; player.renderY = 2 * TILE_SIZE;
+                    currentMapId = 'OUTPOST';
+                    endBattle();
+                }, 1000);
+            }
+        }
+
+        function endBattle() {
+            activeEnemy = null;
+            document.getElementById('battleOverlay').classList.add('hidden');
+            document.getElementById('battleLog').innerHTML = '';
+            gameState = 'OVERWORLD';
+            audio.startBGM('overworld');
+            updateHud();
+        }
+
+        /* --- SAVE / LOAD GAME ENGINE --- */
+        function saveGameToStorage() {
+            try {
+                const saveData = {
+                    player: player,
+                    currentMapId: currentMapId,
+                    chests: maps
+                };
+                localStorage.setItem('nexus_rebellion_save_16bit', JSON.stringify(saveData));
+                addFloatingText('GAME STATE SAVED TO CORE', canvas.width/2, canvas.height/2, '#00ff66');
+                audio.victory();
+            } catch(e) {
+                console.error("Save failed", e);
+            }
+        }
+
+        function loadSavedGame() {
+            try {
+                const raw = localStorage.getItem('nexus_rebellion_save_16bit');
+                if (!raw) {
+                    alert('No save core found!');
+                    return;
+                }
+                const data = JSON.parse(raw);
+                Object.assign(player, data.player);
+                currentMapId = data.currentMapId;
+                player.renderX = player.gridX * TILE_SIZE;
+                player.renderY = player.gridY * TILE_SIZE;
+                startGame();
+                addFloatingText('SAVED CORE LOADED SUCCESSFUL', canvas.width/2, canvas.height/2, '#00ffcc');
+            } catch(e) {
+                alert('Corrupted save data.');
+            }
+        }
+
+        /* --- CANVAS INITIALIZATION & RENDERER --- */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        function startGame() {
+            audio.init();
+            audio.select();
+            document.getElementById('startOverlay').classList.add('hidden');
+            gameState = 'OVERWORLD';
+            audio.startBGM('overworld');
+            updateHud();
+        }
+
+        function updateHud() {
+            document.getElementById('hudLevel').innerText = `LV.${player.level}`;
+            document.getElementById('hudHpBar').style.width = Math.floor((player.hp / player.maxHp) * 100) + '%';
+            document.getElementById('hudHpText').innerText = `${player.hp}/${player.maxHp} HP`;
+            document.getElementById('hudLocation').innerText = maps[currentMapId].name;
+
+            const questTexts = {
+                1: "Reboot local node terminal in Outpost Zero.",
+                2: "Clear Server Caverns and retrieve Keycard Alpha.",
+                3: "Infiltrate Cyber Labs & steal Quantum Core.",
+                4: "Breach Nexus Mainframe & destroy NEXUS-9!"
+            };
+            document.getElementById('hudQuestText').innerText = questTexts[player.questStep] || "Overpower Rogue AI!";
+        }
+
+        function createParticles(x, y, color, count=10) {
+            for(let i=0; i<count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    life: 20 + Math.random() * 15,
+                    color: color
+                });
+            }
+        }
+
+        function addFloatingText(text, x, y, color='#00ffcc') {
+            floatingTexts.push({ text, x, y, color, life: 45 });
+        }
+
+        /* --- PROCEDURAL 16-BIT PIXEL ART DRAW HELPERS --- */
+        function draw16BitPlayer(x, y, dir, animFrame) {
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.beginPath(); ctx.ellipse(x+16, y+30, 10, 4, 0, 0, Math.PI*2); ctx.fill();
+
+            const bob = (animFrame % 2 === 1) ? -2 : 0;
+
+            // Cyber Coat / Body
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(x + 8, y + 10 + bob, 16, 16);
+
+            // Hardware Rig Backpack
+            ctx.fillStyle = '#ff007f';
+            ctx.fillRect(x + 4, y + 12 + bob, 4, 12);
+            ctx.fillStyle = '#00ffcc'; // LED
+            ctx.fillRect(x + 4, y + 14 + bob, 2, 2);
+
+            // Head
+            ctx.fillStyle = '#fde047';
+            ctx.fillRect(x + 10, y + 4 + bob, 12, 10);
+            ctx.fillStyle = '#00ffcc';
+            if (dir === 'down') ctx.fillRect(x + 12, y + 8 + bob, 8, 3);
+            else if (dir === 'left') ctx.fillRect(x + 10, y + 8 + bob, 5, 3);
+            else if (dir === 'right') ctx.fillRect(x + 15, y + 8 + bob, 5, 3);
+            else ctx.fillRect(x + 12, y + 5 + bob, 8, 2);
+
+            // Legs Walking Cycle
+            ctx.fillStyle = '#1e293b';
+            if (animFrame === 1) {
+                ctx.fillRect(x + 8, y + 26, 6, 6);
+                ctx.fillRect(x + 18, y + 24, 6, 6);
+            } else if (animFrame === 3) {
+                ctx.fillRect(x + 8, y + 24, 6, 6);
+                ctx.fillRect(x + 18, y + 26, 6, 6);
+            } else {
+                ctx.fillRect(x + 9, y + 26, 5, 6);
+                ctx.fillRect(x + 18, y + 26, 5, 6);
+            }
+        }
+
+        function draw16BitEnemy(type, x, y) {
+            const time = Date.now() / 250;
+            const floatY = Math.sin(time) * 4;
+
+            if (type === 'BUG') {
+                ctx.fillStyle = '#00ff66';
+                ctx.fillRect(x - 20, y - 20 + floatY, 40, 40);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(x - 12, y - 10 + floatY, 8, 8);
+                ctx.fillRect(x + 4, y - 10 + floatY, 8, 8);
+            } else if (type === 'TROJAN') {
+                ctx.fillStyle = '#ff007f';
+                ctx.fillRect(x - 30, y - 30 + floatY, 60, 60);
+                ctx.fillStyle = '#eab308';
+                ctx.fillRect(x - 15, y - 15 + floatY, 30, 30);
+            } else if (type === 'MEMORY_LEAK') {
+                ctx.fillStyle = '#9d4edd';
+                ctx.beginPath(); ctx.arc(x, y + floatY, 35, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#00ffcc';
+                ctx.beginPath(); ctx.arc(x - 10, y - 5 + floatY, 6, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(x + 10, y - 5 + floatY, 6, 0, Math.PI*2); ctx.fill();
+            } else {
+                // Boss Sprites
+                ctx.fillStyle = activeEnemy ? activeEnemy.color : '#ff0055';
+                ctx.fillRect(x - 45, y - 45 + floatY, 90, 90);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(x - 30, y - 20 + floatY, 60, 20);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(x - 20 + Math.sin(time*2)*10, y - 15 + floatY, 15, 10);
+            }
+        }
+
+        /* --- MAIN ENGINE UPDATE & RENDER LOOP WITH DT CLAMPING --- */
+        let lastTime = performance.now();
+
+        function gameLoop(now) {
+            // Delta time calculation with 0.1s max safety clamp
+            let dt = (now - lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1;
+            lastTime = now;
+
+            updatePlayerPosition(dt);
+
+            // Screen Shake
+            let offsetX = 0, offsetY = 0;
+            if (shakeTimer > 0) {
+                shakeTimer--;
+                offsetX = (Math.random() - 0.5) * 8;
+                offsetY = (Math.random() - 0.5) * 8;
+            }
+
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+
+            ctx.fillStyle = '#020208';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (gameState === 'OVERWORLD' || gameState === 'DIALOGUE' || gameState === 'RIG_MENU') {
+                renderOverworld();
+            } else if (gameState === 'BATTLE') {
+                renderBattle();
+            }
+
+            // Render Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, p.y, 4, 4);
+                p.x += p.vx; p.y += p.vy;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // Render Floating Text
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ctx.fillStyle = ft.color;
+                ctx.font = '10px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ft.y -= 0.6;
+                ft.life--;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            ctx.restore();
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* --- RENDER OVERWORLD MAP --- */
+        function renderOverworld() {
+            const curMap = maps[currentMapId];
+            const time = Date.now() / 300;
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    const tile = getTile(currentMapId, c, r);
+                    const x = c * TILE_SIZE;
+                    const y = r * TILE_SIZE;
+
+                    // Tech Grid Floor
+                    ctx.fillStyle = '#0b0f19';
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = '#111827';
+                    ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                    if (tile === T_WALL) {
+                        ctx.fillStyle = '#1e293b';
+                        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        ctx.fillStyle = '#0f172a';
+                        ctx.fillRect(x+2, y+2, TILE_SIZE-4, TILE_SIZE-4);
+                        // Server LED
+                        ctx.fillStyle = (Math.floor(time + c + r) % 2 === 0) ? '#00ffcc' : '#ff007f';
+                        ctx.fillRect(x+6, y+6, 4, 4);
+                    } else if (tile === T_GLITCH) {
+                        ctx.fillStyle = '#2e1065';
+                        ctx.fillRect(x+2, y+2, TILE_SIZE-4, TILE_SIZE-4);
+                        ctx.fillStyle = '#7e22ce';
+                        ctx.fillRect(x+6 + Math.sin(time + c)*3, y+6, 6, 6);
+                    } else if (tile === T_DOOR) {
+                        ctx.fillStyle = '#0284c7';
+                        ctx.fillRect(x+4, y, TILE_SIZE-8, TILE_SIZE);
+                    } else if (tile === T_BOSS_GATE) {
+                        ctx.fillStyle = '#be123c';
+                        ctx.fillRect(x, y+8, TILE_SIZE, TILE_SIZE-16);
+                    }
+                }
+            }
+
+            // Draw Chests
+            if (curMap.chests) {
+                curMap.chests.forEach(c => {
+                    ctx.fillStyle = c.opened ? '#4b5563' : '#eab308';
+                    ctx.fillRect(c.x * TILE_SIZE + 6, c.y * TILE_SIZE + 6, 20, 20);
+                    ctx.strokeStyle = '#fef08a';
+                    ctx.strokeRect(c.x * TILE_SIZE + 6, c.y * TILE_SIZE + 6, 20, 20);
+                });
+            }
+
+            // Draw Terminals
+            if (curMap.terminals) {
+                curMap.terminals.forEach(t => {
+                    ctx.fillStyle = '#06b6d4';
+                    ctx.fillRect(t.x * TILE_SIZE + 6, t.y * TILE_SIZE + 4, 20, 24);
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(t.x * TILE_SIZE + 9, t.y * TILE_SIZE + 7, 14, 10);
+                    ctx.fillStyle = '#00ff66';
+                    ctx.fillRect(t.x * TILE_SIZE + 11, t.y * TILE_SIZE + 9, 4, 4);
+                });
+            }
+
+            // Draw Animated Player Character
+            draw16BitPlayer(player.renderX, player.renderY, player.direction, player.animFrame);
+        }
+
+        /* --- RENDER BATTLE SCREEN --- */
+        function renderBattle() {
+            ctx.fillStyle = '#050714';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Animated Grid Background
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            for(let i=0; i<canvas.width; i+=30) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+
+            // Player Platform
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath(); ctx.ellipse(160, 260, 100, 35, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#00ffcc'; ctx.stroke();
+            draw16BitPlayer(145, 220, 'right', 0);
+
+            // Enemy Platform
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath(); ctx.ellipse(480, 150, 110, 40, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#ff007f'; ctx.stroke();
+
+            if (activeEnemy) {
+                draw16BitEnemy(activeEnemy.name.split(' ')[0], 480, 120);
+
+                // Enemy HP Bar Card
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+                ctx.fillRect(360, 15, 240, 45);
+                ctx.strokeStyle = '#ff007f';
+                ctx.strokeRect(360, 15, 240, 45);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px "Press Start 2P"';
+                ctx.textAlign = 'left';
+                ctx.fillText(activeEnemy.name, 370, 32);
+
+                const pct = Math.max(0, activeEnemy.hp / activeEnemy.maxHp);
+                ctx.fillStyle = '#374151';
+                ctx.fillRect(370, 40, 220, 10);
+                ctx.fillStyle = pct > 0.4 ? '#00ff66' : '#ff0055';
+                ctx.fillRect(370, 40, Math.floor(220 * pct), 10);
+            }
+        }
+
+        // Boot Main Loop
+        window.onload = function() {
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
